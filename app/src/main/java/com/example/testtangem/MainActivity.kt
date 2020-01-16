@@ -14,9 +14,7 @@ import com.tangem.tasks.ScanEvent
 import com.tangem.tasks.TaskEvent
 import iroha.protocol.Primitive
 import iroha.protocol.TransactionOuterClass
-import jp.co.soramitsu.iroha.java.IrohaAPI
-import jp.co.soramitsu.iroha.java.TransactionBuilder
-import jp.co.soramitsu.iroha.java.Utils
+import jp.co.soramitsu.iroha.java.*
 import org.apache.xerces.impl.dv.xs.HexBinaryDV
 import org.jetbrains.anko.doAsync
 import org.jetbrains.anko.toast
@@ -31,14 +29,18 @@ private const val TAG = "Tangem test"
 
 class MainActivity : AppCompatActivity() {
 
-    // Test user public key. Its corresponding private key is stored on the card which id ends with '9'
-    private val publicKey =
-        DatatypeConverter.parseHexBinary("e34857cd8cf1e1d82efd30d606db6b29d8b92ce684b299f48f40d1d7f40cd531")
+    private val managerAccountName = "manager"
+    private val userAccountName = "test"
+    private val domain = "tangem"
+    private val userAtDomain = "%s@%s".format(userAccountName, domain)
+    private val managerAtDomain = "%s@%s".format(managerAccountName, domain)
+
     private val nfcManager = NfcManager()
     private val cardManagerDelegate: DefaultCardManagerDelegate =
         DefaultCardManagerDelegate(nfcManager.reader)
     private val cardManager = CardManager(nfcManager.reader, cardManagerDelegate)
     private val userPublicKeys: ArrayList<String> = ArrayList()
+    private var managerPublicKey: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -47,11 +49,33 @@ class MainActivity : AppCompatActivity() {
         nfcManager.setCurrentActivity(this)
         cardManagerDelegate.activity = this
         lifecycle.addObserver(NfcLifecycleObserver(nfcManager))
+        val addNewUserCardButton: Button = findViewById(R.id.addNewUserCardButton)!!
         val scanButton: Button = findViewById(R.id.scanButton)!!
         val addCardButton: Button = findViewById(R.id.addCardButton)!!
         val signButton: Button = findViewById(R.id.signButton)!!
+        val lostCardButton: Button = findViewById(R.id.lostCardButton)!!
+        val scanManagerCardButton: Button = findViewById(R.id.addManagerCardButton)!!
         val irohaIpAddressEditText: EditText = findViewById(R.id.ipAddress)
         var card: Card? = null
+
+        addNewUserCardButton.setOnClickListener { _ ->
+
+        }
+
+        scanManagerCardButton.setOnClickListener { _ ->
+            cardManager.scanCard { taskEvent ->
+                when (taskEvent) {
+                    is TaskEvent.Event -> {
+                        when (taskEvent.data) {
+                            is ScanEvent.OnReadEvent -> {
+                                val managerCard: Card = (taskEvent.data as ScanEvent.OnReadEvent).card
+                                managerPublicKey = Hex.toHexString(managerCard!!.walletPublicKey)
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // For saving current session public keys in app
         addCardButton.setOnClickListener{_ ->
@@ -61,7 +85,6 @@ class MainActivity : AppCompatActivity() {
                         when (taskEvent.data) {
                             is ScanEvent.OnReadEvent -> {
                                 card = (taskEvent.data as ScanEvent.OnReadEvent).card
-                                println(String.format("Keys in list: %d", userPublicKeys.size))
                                 val publicKey: String = Hex.toHexString(card!!.walletPublicKey)
                                 if (userPublicKeys.contains(publicKey)) {
                                     toast("Card already has been scanned. Add a second one.")
@@ -93,6 +116,61 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        lostCardButton.setOnClickListener{_ ->
+            if (irohaIpAddressEditText.text.toString().isEmpty()) {
+                toast("Please, set Iroha node IP address")
+                return@setOnClickListener
+            }
+            cardManager.scanCard { taskEvent ->
+                when (taskEvent) {
+                    is TaskEvent.Event -> {
+                        when (taskEvent.data) {
+                            is ScanEvent.OnReadEvent -> {
+                                card = (taskEvent.data as ScanEvent.OnReadEvent).card
+                                val publicKeyToRemove: String = userPublicKeys
+                                    .filter { key -> !key.equals(Hex.toHexString(card!!.walletPublicKey)) }
+                                    .first()
+
+                                val unsignedTransaction = createRemoveSignatoryTransaction(Hex.decode(publicKeyToRemove))
+                                cardManager.sign(
+                                    arrayOf(unsignedTransaction.payload()),
+                                    card!!.cardId
+                                ) {
+                                    when (it) {
+                                        is TaskEvent.Completion -> {
+                                            if (it.error != null) runOnUiThread {
+                                                Log.e(TAG, it.error!!.message ?: "Error occurred")
+                                                toast("Error occurred")
+                                            }
+                                        }
+                                        is TaskEvent.Event -> runOnUiThread {
+                                            val signature = formSignature(it.data.signature, card!!.walletPublicKey)
+                                            val signedTx = unsignedTransaction.addSignature(signature).build()
+                                            lostCardButton.isEnabled = false
+                                            sendTransactionToIroha(
+                                                irohaIpAddressEditText.text.toString(),
+                                                signedTx,
+                                                {
+                                                    lostCardButton.isEnabled = true
+                                                    toast("Transaction has been sent. Your lost card will be removed. Please, creare a new additional at Bank office")
+                                                },
+                                                {
+                                                    lostCardButton.isEnabled = true
+                                                    toast("Cannot send transaction")
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+
         // Then, we create and sign a transaction
         signButton.setOnClickListener { _ ->
             if (card == null) {
@@ -162,16 +240,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun createRemoveSignatoryTransaction(publicKey: ByteArray) = TransactionBuilder("test@d3", System.currentTimeMillis())
-        .removeSignatory("test@d3", publicKey)
+    /**
+     * Creates a simple `GetSignatories` query
+     * @return unsigned `RemoveSignatory` query
+     */
+    private fun createGetAllSignatoriesQuery(accountId: String) = QueryBuilder(managerAccountName, System.currentTimeMillis(), 1003L)
+        .getSignatories(accountId)
+        .buildUnsigned()
+
+    /**
+     * Creates a simple `RemoveSignatory` transaction
+     * @return unsigned `RemoveSignatory` transaction
+     */
+    private fun createRemoveSignatoryTransaction(publicKey: ByteArray) = TransactionBuilder(userAtDomain, System.currentTimeMillis())
+        .removeSignatory(userAtDomain, publicKey)
         .build()
 
     /**
      * Creates a simple `SetAccountDetail` transaction
      * @return unsigned `SetAccountDetail` transaction
      */
-    private fun createTransaction() = TransactionBuilder("test@d3", System.currentTimeMillis())
-        .setAccountDetail("test@d3", "time", System.currentTimeMillis().toString())
+    private fun createTransaction() = TransactionBuilder(userAtDomain, System.currentTimeMillis())
+        .setAccountDetail(userAtDomain, "time", System.currentTimeMillis().toString())
         .build()
 
     /**
