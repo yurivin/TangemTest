@@ -34,6 +34,18 @@
                   "domainId": "d3",
                   "publicKey": "e34857cd8cf1e1d82efd30d606db6b29d8b92ce684b299f48f40d1d7f40cd531"
                 }
+              },
+              {
+                "addSignatory": {
+                  "accountId": "test@d3",
+                  "publicKey": "d939cd169b85697ca34f4f19b880567d8e2aa5451bc5290af55cdac1025a6ba3"
+                }
+              },
+              {
+                "setAccountQuorum" : {
+                  "accountId": "test@d3",
+                  "quorum": 1
+                }
               }
             ],
             "quorum": 1

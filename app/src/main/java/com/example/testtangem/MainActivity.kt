@@ -17,10 +17,14 @@ import iroha.protocol.TransactionOuterClass
 import jp.co.soramitsu.iroha.java.IrohaAPI
 import jp.co.soramitsu.iroha.java.TransactionBuilder
 import jp.co.soramitsu.iroha.java.Utils
+import org.apache.xerces.impl.dv.xs.HexBinaryDV
 import org.jetbrains.anko.doAsync
 import org.jetbrains.anko.toast
 import org.jetbrains.anko.uiThread
+import org.spongycastle.util.encoders.Hex
+import org.spongycastle.util.encoders.HexEncoder
 import javax.xml.bind.DatatypeConverter
+import javax.xml.bind.annotation.adapters.HexBinaryAdapter
 
 
 private const val TAG = "Tangem test"
@@ -34,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     private val cardManagerDelegate: DefaultCardManagerDelegate =
         DefaultCardManagerDelegate(nfcManager.reader)
     private val cardManager = CardManager(nfcManager.reader, cardManagerDelegate)
+    private val userPublicKeys: ArrayList<String> = ArrayList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -43,9 +48,33 @@ class MainActivity : AppCompatActivity() {
         cardManagerDelegate.activity = this
         lifecycle.addObserver(NfcLifecycleObserver(nfcManager))
         val scanButton: Button = findViewById(R.id.scanButton)!!
+        val addCardButton: Button = findViewById(R.id.addCardButton)!!
         val signButton: Button = findViewById(R.id.signButton)!!
         val irohaIpAddressEditText: EditText = findViewById(R.id.ipAddress)
         var card: Card? = null
+
+        // For saving current session public keys in app
+        addCardButton.setOnClickListener{_ ->
+            cardManager.scanCard { taskEvent ->
+                when (taskEvent) {
+                    is TaskEvent.Event -> {
+                        when (taskEvent.data) {
+                            is ScanEvent.OnReadEvent -> {
+                                card = (taskEvent.data as ScanEvent.OnReadEvent).card
+                                println(String.format("Keys in list: %d", userPublicKeys.size))
+                                val publicKey: String = Hex.toHexString(card!!.walletPublicKey)
+                                if (userPublicKeys.contains(publicKey)) {
+                                    toast("Card already has been scanned. Add a second one.")
+                                } else {
+                                    userPublicKeys.add(publicKey)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // First, we have to scan the card to get its id and public key
         scanButton.setOnClickListener { _ ->
             cardManager.scanCard { taskEvent ->
@@ -55,6 +84,9 @@ class MainActivity : AppCompatActivity() {
                             is ScanEvent.OnReadEvent -> {
                                 // Handle returned card data
                                 card = (taskEvent.data as ScanEvent.OnReadEvent).card
+                                if (!userPublicKeys.contains(Hex.toHexString(card!!.walletPublicKey))) {
+                                    toast("Card is not in the list. Please, add it.")
+                                }
                             }
                         }
                     }
@@ -85,7 +117,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     is TaskEvent.Event -> runOnUiThread {
-                        val signature = formSignature(it.data.signature)
+                        val signature = formSignature(it.data.signature, card!!.walletPublicKey)
                         val signedTx = unsignedTransaction.addSignature(signature).build()
                         signButton.isEnabled = false
                         sendTransactionToIroha(
@@ -130,6 +162,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun createRemoveSignatoryTransaction(publicKey: ByteArray) = TransactionBuilder("test@d3", System.currentTimeMillis())
+        .removeSignatory("test@d3", publicKey)
+        .build()
+
     /**
      * Creates a simple `SetAccountDetail` transaction
      * @return unsigned `SetAccountDetail` transaction
@@ -143,7 +179,7 @@ class MainActivity : AppCompatActivity() {
      * @param signatureBytes - signature bytes
      * @return signature
      */
-    private fun formSignature(signatureBytes: ByteArray): Primitive.Signature {
+    private fun formSignature(signatureBytes: ByteArray, publicKey: ByteArray?): Primitive.Signature {
         return Primitive.Signature.newBuilder()
             .setSignature(Utils.toHex(signatureBytes))
             .setPublicKey(Utils.toHex(publicKey))
