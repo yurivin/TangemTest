@@ -4,6 +4,7 @@ import com.github.kittinunf.result.Result
 import iroha.protocol.Endpoint
 import iroha.protocol.TransactionOuterClass
 import jp.co.soramitsu.iroha.java.IrohaAPI
+import jp.co.soramitsu.iroha.java.Query
 import jp.co.soramitsu.iroha.java.Utils
 import jp.co.soramitsu.iroha.java.subscription.WaitForTerminalStatus
 import java.util.concurrent.atomic.AtomicReference
