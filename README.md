@@ -20,4 +20,6 @@ The app has two buttons: "scan" and "sign". You have to scan your card to get it
 chmod +x /deploy/iroha/entrypoint.sh
 ```
 
-## Tangem cards can be used for iOS and Android. SDK for these platforms can be foun [here](https://github.com/Tangem)
+## SDK
+
+Tangem cards can be used for iOS and Android. SDK for these platforms can be foun [here](https://github.com/Tangem)
