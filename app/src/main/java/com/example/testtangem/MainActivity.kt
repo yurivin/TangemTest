@@ -131,9 +131,6 @@ class MainActivity : AppCompatActivity() {
                             is ScanEvent.OnReadEvent -> {
                                 // Handle returned card data
                                 card = (taskEvent.data as ScanEvent.OnReadEvent).card
-                                if (!userPublicKeys.contains(card!!.walletPublicKey)) {
-                                    println("Card is not in the list. Please, add it.")
-                                }
                             }
                         }
                     }
@@ -254,7 +251,7 @@ class MainActivity : AppCompatActivity() {
      * Creates a simple `AddSignatory` query
      * @return unsigned `AddSignatory` query
      */
-    private fun createAddSignatoryTransaction(accountId: String, publicKey: ByteArray?) = TransactionBuilder(userAtDomain, System.currentTimeMillis())
+    private fun createAddSignatoryTransaction(accountId: String, publicKey: ByteArray?) = TransactionBuilder(accountId, System.currentTimeMillis())
         .addSignatory(accountId, publicKey)
         .build()
 

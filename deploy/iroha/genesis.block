@@ -19,8 +19,7 @@
                   "roleName": "test",
                   "permissions": [
                     "can_set_detail",
-                    "can_remove_signatory",
-                    "can_add_signatory"
+                    "can_remove_signatory"
                   ]
                 }
               },
@@ -74,7 +73,7 @@
                     "accountId": "manager@tangem",
                     "roleName": "manager"
                   }
-              },
+                },
               {
                 "addSignatory": {
                   "accountId": "test@tangem",
