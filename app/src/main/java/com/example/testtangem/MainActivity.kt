@@ -13,27 +13,35 @@ import com.tangem.tangem_sdk_new.nfc.NfcManager
 import com.tangem.tasks.ScanEvent
 import com.tangem.tasks.TaskEvent
 import iroha.protocol.Primitive
+import iroha.protocol.Queries
 import iroha.protocol.TransactionOuterClass
-import jp.co.soramitsu.iroha.java.IrohaAPI
-import jp.co.soramitsu.iroha.java.TransactionBuilder
-import jp.co.soramitsu.iroha.java.Utils
+import jp.co.soramitsu.iroha.java.*
+import org.apache.xerces.impl.dv.xs.HexBinaryDV
 import org.jetbrains.anko.doAsync
 import org.jetbrains.anko.toast
 import org.jetbrains.anko.uiThread
+import org.spongycastle.util.encoders.Hex
+import org.spongycastle.util.encoders.HexEncoder
 import javax.xml.bind.DatatypeConverter
+import javax.xml.bind.annotation.adapters.HexBinaryAdapter
 
 
 private const val TAG = "Tangem test"
 
 class MainActivity : AppCompatActivity() {
 
-    // Test user public key. Its corresponding private key is stored on the card which id ends with '9'
-    private val publicKey =
-        DatatypeConverter.parseHexBinary("e34857cd8cf1e1d82efd30d606db6b29d8b92ce684b299f48f40d1d7f40cd531")
+    private val managerAccountName = "manager_bank"
+    private val userAccountName = "test"
+    private val domain = "tangem"
+    private val userAtDomain = "%s@%s".format(userAccountName, domain)
+    private val managerAtDomain = "%s@%s".format(managerAccountName, domain)
+    private val userPublicKey = DatatypeConverter.parseHexBinary("d939cd169b85697ca34f4f19b880567d8e2aa5451bc5290af55cdac1025a6ba3")
+
     private val nfcManager = NfcManager()
     private val cardManagerDelegate: DefaultCardManagerDelegate =
         DefaultCardManagerDelegate(nfcManager.reader)
     private val cardManager = CardManager(nfcManager.reader, cardManagerDelegate)
+    private val userPublicKeys: ArrayList<ByteArray?> = ArrayList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -42,10 +50,101 @@ class MainActivity : AppCompatActivity() {
         nfcManager.setCurrentActivity(this)
         cardManagerDelegate.activity = this
         lifecycle.addObserver(NfcLifecycleObserver(nfcManager))
+        val addNewUserCardButton: Button = findViewById(R.id.addNewUserCardButton)!!
         val scanButton: Button = findViewById(R.id.scanButton)!!
+        val addCardButton: Button = findViewById(R.id.addCardButton)!!
         val signButton: Button = findViewById(R.id.signButton)!!
+        val lostCardButton: Button = findViewById(R.id.lostCardButton)!!
         val irohaIpAddressEditText: EditText = findViewById(R.id.ipAddress)
         var card: Card? = null
+
+        addNewUserCardButton.setOnClickListener { _ ->
+            if (irohaIpAddressEditText.text.toString().isEmpty()) {
+                toast("Please, set Iroha node IP address")
+                return@setOnClickListener
+            } else if (card == null) {
+                toast("Please, scan your card first")
+                return@setOnClickListener
+            }
+
+            val unsignedTransaction = createAddSignatoryTransaction(userAtDomain, userPublicKey)
+
+            cardManager.sign(
+                arrayOf(unsignedTransaction.payload()),
+                card!!.cardId
+            ) {
+                when (it) {
+                    is TaskEvent.Completion -> {
+                        if (it.error != null) runOnUiThread {
+                            Log.e(TAG, it.error!!.message ?: "Error occurred")
+                            toast("Error occurred")
+                        }
+                    }
+                    is TaskEvent.Event -> runOnUiThread {
+                        val signature = formSignature(it.data.signature, card!!.walletPublicKey)
+//                        val signature = formSignature(it.data.signature, DatatypeConverter.parseHexBinary("fdb6cd0431bb4ef8f3ee7c27d0417bfc95ed70b66bbf72ead7516539ccb540ef"))
+                        val signedTransaction = unsignedTransaction.addSignature(signature).build()
+                        addNewUserCardButton.isEnabled = false
+                        sendTransactionToIroha(
+                            irohaIpAddressEditText.text.toString(),
+                            signedTransaction,
+                            {
+                                addNewUserCardButton.isEnabled = true
+                                toast("Transaction has been sent")
+                            },
+                            {
+                                addNewUserCardButton.isEnabled = true
+                                toast("Cannot send transaction")
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // For saving current session public keys in app
+        addCardButton.setOnClickListener{_ ->
+            if (card == null) {
+                toast("Please, scan your card first")
+                return@setOnClickListener
+            } else if (irohaIpAddressEditText.text.toString().isEmpty()) {
+                toast("Please, set Iroha node IP address")
+                return@setOnClickListener
+            }
+            // Create tx
+            val unsignedTransaction = createGrantPermissionTransaction(managerAtDomain)
+            // Sign it
+            cardManager.sign(
+                arrayOf(unsignedTransaction.payload()),
+                card!!.cardId
+            ) {
+                when (it) {
+                    is TaskEvent.Completion -> {
+                        if (it.error != null) runOnUiThread {
+                            Log.e(TAG, it.error!!.message ?: "Error occurred")
+                            toast("Error occurred")
+                        }
+                    }
+                    is TaskEvent.Event -> runOnUiThread {
+                        val signature = formSignature(it.data.signature, card!!.walletPublicKey)
+                        val signedTx = unsignedTransaction.addSignature(signature).build()
+                        addCardButton.isEnabled = false
+                        sendTransactionToIroha(
+                            irohaIpAddressEditText.text.toString(),
+                            signedTx,
+                            {
+                                addCardButton.isEnabled = true
+                                toast("Transaction has been sent")
+                            },
+                            {
+                                addCardButton.isEnabled = true
+                                toast("Cannot send transaction")
+                            })
+                    }
+                }
+            }
+        }
+
         // First, we have to scan the card to get its id and public key
         scanButton.setOnClickListener { _ ->
             cardManager.scanCard { taskEvent ->
@@ -61,6 +160,47 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        lostCardButton.setOnClickListener{_ ->
+            if (irohaIpAddressEditText.text.toString().isEmpty()) {
+                toast("Please, set Iroha node IP address")
+                return@setOnClickListener
+            }
+
+            val unsignedTransaction = createRemoveSignatoryTransaction(userPublicKey)
+            // Sign it
+            cardManager.sign(
+                arrayOf(unsignedTransaction.payload()),
+                card!!.cardId
+            ) {
+                when (it) {
+                    is TaskEvent.Completion -> {
+                        if (it.error != null) runOnUiThread {
+                            Log.e(TAG, it.error!!.message ?: "Error occurred")
+                            toast("Error occurred")
+                        }
+                    }
+                    is TaskEvent.Event -> runOnUiThread {
+                        val signature = formSignature(it.data.signature, card!!.walletPublicKey)
+                        val signedTx = unsignedTransaction.addSignature(signature).build()
+                        lostCardButton.isEnabled = false
+                        sendTransactionToIroha(
+                            irohaIpAddressEditText.text.toString(),
+                            signedTx,
+                            {
+                                lostCardButton.isEnabled = true
+                                toast("Transaction has been sent")
+                            },
+                            {
+                                lostCardButton.isEnabled = true
+                                toast("Cannot send transaction")
+                            })
+                    }
+                }
+            }
+
+        }
+
         // Then, we create and sign a transaction
         signButton.setOnClickListener { _ ->
             if (card == null) {
@@ -85,7 +225,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     is TaskEvent.Event -> runOnUiThread {
-                        val signature = formSignature(it.data.signature)
+                        val signature = formSignature(it.data.signature, card!!.walletPublicKey)
                         val signedTx = unsignedTransaction.addSignature(signature).build()
                         signButton.isEnabled = false
                         sendTransactionToIroha(
@@ -131,11 +271,36 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Creates a simple `GrantPermissionTransaction` query
+     * @return unsigned `GrantPermissionTransaction` query
+     */
+    private fun createGrantPermissionTransaction(accountId: String) = TransactionBuilder(userAtDomain, System.currentTimeMillis())
+        .grantPermission(accountId, Primitive.GrantablePermission.can_add_my_signatory)
+        .build()
+
+
+    /**
+     * Creates a simple `AddSignatory` query
+     * @return unsigned `AddSignatory` query
+     */
+    private fun createAddSignatoryTransaction(accountId: String, publicKey: ByteArray?) = TransactionBuilder(managerAtDomain, System.currentTimeMillis())
+        .addSignatory(accountId, publicKey)
+        .build()
+
+    /**
+     * Creates a simple `RemoveSignatory` transaction
+     * @return unsigned `RemoveSignatory` transaction
+     */
+    private fun createRemoveSignatoryTransaction(publicKey: ByteArray?) = TransactionBuilder(userAtDomain, System.currentTimeMillis())
+        .removeSignatory(userAtDomain, publicKey)
+        .build()
+
+    /**
      * Creates a simple `SetAccountDetail` transaction
      * @return unsigned `SetAccountDetail` transaction
      */
-    private fun createTransaction() = TransactionBuilder("test@d3", System.currentTimeMillis())
-        .setAccountDetail("test@d3", "time", System.currentTimeMillis().toString())
+    private fun createTransaction() = TransactionBuilder(userAtDomain, System.currentTimeMillis())
+        .setAccountDetail(userAtDomain, "time", System.currentTimeMillis().toString())
         .build()
 
     /**
@@ -143,7 +308,7 @@ class MainActivity : AppCompatActivity() {
      * @param signatureBytes - signature bytes
      * @return signature
      */
-    private fun formSignature(signatureBytes: ByteArray): Primitive.Signature {
+    private fun formSignature(signatureBytes: ByteArray, publicKey: ByteArray?): Primitive.Signature {
         return Primitive.Signature.newBuilder()
             .setSignature(Utils.toHex(signatureBytes))
             .setPublicKey(Utils.toHex(publicKey))
