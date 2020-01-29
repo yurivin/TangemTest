@@ -30,7 +30,7 @@ private const val TAG = "Tangem test"
 
 class MainActivity : AppCompatActivity() {
 
-    private val managerAccountName = "manager"
+    private val managerAccountName = "manager_bank"
     private val userAccountName = "test"
     private val domain = "tangem"
     private val userAtDomain = "%s@%s".format(userAccountName, domain)
@@ -82,6 +82,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     is TaskEvent.Event -> runOnUiThread {
                         val signature = formSignature(it.data.signature, card!!.walletPublicKey)
+//                        val signature = formSignature(it.data.signature, DatatypeConverter.parseHexBinary("fdb6cd0431bb4ef8f3ee7c27d0417bfc95ed70b66bbf72ead7516539ccb540ef"))
                         val signedTransaction = unsignedTransaction.addSignature(signature).build()
                         addNewUserCardButton.isEnabled = false
                         sendTransactionToIroha(
@@ -103,20 +104,42 @@ class MainActivity : AppCompatActivity() {
 
         // For saving current session public keys in app
         addCardButton.setOnClickListener{_ ->
-            cardManager.scanCard { taskEvent ->
-                when (taskEvent) {
-                    is TaskEvent.Event -> {
-                        when (taskEvent.data) {
-                            is ScanEvent.OnReadEvent -> {
-                                card = (taskEvent.data as ScanEvent.OnReadEvent).card
-                                val publicKey: ByteArray? = card!!.walletPublicKey
-                                if (userPublicKeys.contains(publicKey)) {
-                                    println("Card has already been scanned. Add a second one.")
-                                } else {
-                                    userPublicKeys.add(publicKey)
-                                }
-                            }
+            if (card == null) {
+                toast("Please, scan your card first")
+                return@setOnClickListener
+            } else if (irohaIpAddressEditText.text.toString().isEmpty()) {
+                toast("Please, set Iroha node IP address")
+                return@setOnClickListener
+            }
+            // Create tx
+            val unsignedTransaction = createGrantPermissionTransaction(managerAtDomain)
+            // Sign it
+            cardManager.sign(
+                arrayOf(unsignedTransaction.payload()),
+                card!!.cardId
+            ) {
+                when (it) {
+                    is TaskEvent.Completion -> {
+                        if (it.error != null) runOnUiThread {
+                            Log.e(TAG, it.error!!.message ?: "Error occurred")
+                            toast("Error occurred")
                         }
+                    }
+                    is TaskEvent.Event -> runOnUiThread {
+                        val signature = formSignature(it.data.signature, card!!.walletPublicKey)
+                        val signedTx = unsignedTransaction.addSignature(signature).build()
+                        addCardButton.isEnabled = false
+                        sendTransactionToIroha(
+                            irohaIpAddressEditText.text.toString(),
+                            signedTx,
+                            {
+                                addCardButton.isEnabled = true
+                                toast("Transaction has been sent")
+                            },
+                            {
+                                addCardButton.isEnabled = true
+                                toast("Cannot send transaction")
+                            })
                     }
                 }
             }
@@ -248,10 +271,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Creates a simple `GrantPermissionTransaction` query
+     * @return unsigned `GrantPermissionTransaction` query
+     */
+    private fun createGrantPermissionTransaction(accountId: String) = TransactionBuilder(userAtDomain, System.currentTimeMillis())
+        .grantPermission(accountId, Primitive.GrantablePermission.can_add_my_signatory)
+        .build()
+
+
+    /**
      * Creates a simple `AddSignatory` query
      * @return unsigned `AddSignatory` query
      */
-    private fun createAddSignatoryTransaction(accountId: String, publicKey: ByteArray?) = TransactionBuilder(accountId, System.currentTimeMillis())
+    private fun createAddSignatoryTransaction(accountId: String, publicKey: ByteArray?) = TransactionBuilder(managerAtDomain, System.currentTimeMillis())
         .addSignatory(accountId, publicKey)
         .build()
 

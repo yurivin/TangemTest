@@ -19,6 +19,9 @@
                   "roleName": "test",
                   "permissions": [
                     "can_set_detail",
+                    "can_add_signatory",
+                    "can_grant_can_add_my_signatory",
+                    "can_grant_can_remove_my_signatory",
                     "can_remove_signatory"
                   ]
                 }
@@ -27,24 +30,10 @@
                 "createRole": {
                   "roleName": "manager",
                   "permissions": [
-                    "can_add_peer",
                     "can_add_signatory",
-                    "can_create_account",
-                    "can_create_domain",
-                    "can_get_all_acc_ast",
-                    "can_get_all_acc_ast_txs",
-                    "can_get_all_acc_detail",
-                    "can_get_all_acc_txs",
-                    "can_get_all_accounts",
-                    "can_get_all_signatories",
-                    "can_get_all_txs",
-                    "can_get_blocks",
-                    "can_get_roles",
-                    "can_read_assets",
                     "can_remove_signatory",
-                    "can_set_quorum",
-                    "can_append_role",
-                    "can_detach_role"
+                    "can_grant_can_add_my_signatory",
+                    "can_grant_can_set_my_quorum"
                   ]
                 }
               },
@@ -56,7 +45,7 @@
               },
               {
                 "createAccount": {
-                  "accountName": "manager",
+                  "accountName": "manager_bank",
                   "domainId": "tangem",
                   "publicKey": "fdb6cd0431bb4ef8f3ee7c27d0417bfc95ed70b66bbf72ead7516539ccb540ef"
                 }
@@ -69,11 +58,11 @@
                 }
               },
               {
-                  "appendRole": {
-                    "accountId": "manager@tangem",
-                    "roleName": "manager"
-                  }
-                },
+                "appendRole": {
+                  "accountId": "manager_bank@tangem",
+                  "roleName": "manager"
+                }
+              },
               {
                 "addSignatory": {
                   "accountId": "test@tangem",
