@@ -18,21 +18,61 @@
                 "createRole": {
                   "roleName": "test",
                   "permissions": [
-                    "can_set_detail"
+                    "can_set_detail",
+                    "can_add_signatory",
+                    "can_grant_can_add_my_signatory",
+                    "can_grant_can_remove_my_signatory",
+                    "can_remove_signatory"
+                  ]
+                }
+              },
+              {
+                "createRole": {
+                  "roleName": "manager",
+                  "permissions": [
+                    "can_add_signatory",
+                    "can_remove_signatory",
+                    "can_grant_can_add_my_signatory",
+                    "can_grant_can_set_my_quorum"
                   ]
                 }
               },
               {
                 "createDomain": {
-                  "domainId": "d3",
+                  "domainId": "tangem",
                   "defaultRole": "test"
                 }
               },
               {
                 "createAccount": {
+                  "accountName": "manager_bank",
+                  "domainId": "tangem",
+                  "publicKey": "fdb6cd0431bb4ef8f3ee7c27d0417bfc95ed70b66bbf72ead7516539ccb540ef"
+                }
+              },
+              {
+                "createAccount": {
                   "accountName": "test",
-                  "domainId": "d3",
+                  "domainId": "tangem",
                   "publicKey": "e34857cd8cf1e1d82efd30d606db6b29d8b92ce684b299f48f40d1d7f40cd531"
+                }
+              },
+              {
+                "appendRole": {
+                  "accountId": "manager_bank@tangem",
+                  "roleName": "manager"
+                }
+              },
+              {
+                "addSignatory": {
+                  "accountId": "test@tangem",
+                  "publicKey": "d939cd169b85697ca34f4f19b880567d8e2aa5451bc5290af55cdac1025a6ba3"
+                }
+              },
+              {
+                "setAccountQuorum" : {
+                  "accountId": "test@tangem",
+                  "quorum": 1
                 }
               }
             ],

@@ -22,8 +22,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility "1.8"
+        targetCompatibility "1.8"
     }
     packagingOptions {
         exclude 'META-INF/DEPENDENCIES'
@@ -53,6 +53,7 @@ dependencies {
      * Use the main hyperledger library.
      */
     implementation 'com.github.dolgopolovwork.iroha-java:client:9298211c30'
+//    implementation "com.github.hyperledger.iroha-java:client:5.1.2"
     implementation 'com.github.tangem.tangem-sdk-android:tangem-core:0.2.1'
     implementation 'com.github.tangem.tangem-sdk-android:tangem-sdk:0.2.1'
     implementation fileTree(dir: 'libs', include: ['*.jar'])
